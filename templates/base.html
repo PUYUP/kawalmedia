@@ -1,0 +1,31 @@
+{% load static %}
+<!doctype html>
+<html lang="id">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="x-ua-compatible" content="ie=edge">
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+        {% block head %}{% endblock %}
+    </head>
+
+    <body>
+        <div class="preloader">
+            <div class="spin">
+                <div class="cube1"></div>
+                <div class="cube2"></div>
+            </div>
+        </div>
+
+        {% block header %}{% endblock %}
+
+        <main class="container-fluid position-relative">
+            {% block content %}{% endblock %}
+        </main>
+
+        {% block css %}{% endblock %}
+
+        <script src="{% static 'web/js/jquery-3.4.1.min.js' %}"></script>
+        <script src="{% static 'web/js/functions.js' %}"></script>
+        {% block js %}{% endblock %}
+    </body>
