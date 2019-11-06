@@ -9,8 +9,7 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from utils.validators import get_model
-from ..utils.auths import (get_user_with_uuid, check_verified_email,
-                           check_verified_phone)
+from ..utils.auths import get_user_from_uuid, check_validation_passed
 
 Person = get_model('person', 'Person')
 Attribute = get_model('person', 'Attribute')
@@ -52,7 +51,7 @@ class SingleSerializer(serializers.ModelSerializer):
         read_only_fields = ['uuid']
 
     def get_attribute_values(self, obj):
-        values_dict = {}
+        values_dict = dict()
         request = self.context['request']
         values = obj.attribute_values \
             .prefetch_related('attribute') \
@@ -61,7 +60,7 @@ class SingleSerializer(serializers.ModelSerializer):
 
         if values.exists():
             for value in values:
-                attr_type = value.attribute.type
+                attr_type = value.attribute.field_type
                 identifier = value.attribute.identifier
                 name = 'value_%s' % attr_type
                 content = getattr(value, name)
@@ -94,8 +93,6 @@ class CreateSerializer(serializers.ModelSerializer):
     This create User then make as Person
     """
     uuid = serializers.UUIDField(source='person.uuid', read_only=True)
-    verified_email = serializers.SerializerMethodField(read_only=True)
-    verified_phone = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = UserModel
@@ -119,18 +116,6 @@ class CreateSerializer(serializers.ModelSerializer):
                 'required': True
             }
         }
-
-    def get_verified_email(self, obj):
-        if hasattr(obj, 'person'):
-            person = obj.person
-            return check_verified_email(self, person=person)
-        return None
-
-    def get_verified_phone(self, obj):
-        if hasattr(obj, 'person'):
-            person = obj.person
-            return check_verified_phone(self, person=person)
-        return None
 
     def validate(self, data):
         # Request data
@@ -227,7 +212,7 @@ class AttributeSerializer(serializers.ModelSerializer):
         return None
 
     def get_value(self, obj):
-        attr_type = obj.type
+        attr_type = obj.field_type
         request = self.context['request']
         person_uuid = request.GET.get('person_uuid', None)
         name = 'value_%s' % attr_type
@@ -236,7 +221,7 @@ class AttributeSerializer(serializers.ModelSerializer):
 
         # Attributes view by other person
         if person_uuid:
-            user = get_user_with_uuid(self, uuid_init=person_uuid)
+            user = get_user_from_uuid(self, uuid_init=person_uuid)
         else:
             user = request.user
 
@@ -267,8 +252,8 @@ class AttributeSerializer(serializers.ModelSerializer):
                         obj_file.value_file.url)
 
             if attr_type == 'multi_option':
-                value = []
-                value_print = []
+                value = list()
+                value_print = list()
                 option = obj.attributevalue_set \
                     .prefetch_related('person', 'attribute',
                                       'value_multi_option') \

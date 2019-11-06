@@ -5,16 +5,21 @@ from rest_framework.routers import DefaultRouter
 
 # LOCAL
 from .views import (
-    PersonApiView,
     TokenObtainPairViewExtend,
     TokenRefreshView,
-    OptionApiView
+    SecureActionApiView
 )
+
+from .basic.views import PersonApiView
+from .attribute.views import AttributeApiView
+from .validation.views import ValidationApiView
 
 # Create a router and register our viewsets with it.
 router = DefaultRouter()
 router.register('persons', PersonApiView, basename='person')
-router.register('options', OptionApiView, basename='option')
+router.register('attributes', AttributeApiView, basename='attribute')
+router.register('validations', ValidationApiView, basename='validation')
+router.register('secures', SecureActionApiView, basename='secure')
 
 app_name = 'person'
 

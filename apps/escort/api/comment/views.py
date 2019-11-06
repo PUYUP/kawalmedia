@@ -1,5 +1,5 @@
-import itertools
 from uuid import UUID
+from itertools import chain
 
 from django.db.models import (
     F, Q, Case, Value, When, BooleanField,
@@ -71,6 +71,7 @@ class CommentApiView(viewsets.ViewSet):
         limit = kwargs.get('limit', None)
         protest_uuid = kwargs.get('protest_uuid', None)
         parent_uuid = kwargs.get('parent_uuid', None)
+        notified_uuid = kwargs.get('notified_uuid', None)
 
         # The person
         person = getattr(self.request.user, 'person', None)
@@ -154,6 +155,26 @@ class CommentApiView(viewsets.ViewSet):
 
             if limit:
                 queryset = queryset[:int(limit)]
+
+            # If notification we get prev and next value from current content
+            if notified_uuid:
+                if type(parent_uuid) is not UUID:
+                    try:
+                        notified_uuid = UUID(notified_uuid)
+                    except ValueError:
+                        notified_uuid = None
+
+                if notified_uuid:
+                    x = queryset.filter(uuid=notified_uuid)
+
+                    if x.exists():
+                        y = queryset.filter(date_created__lt=x.get().date_created)[:5]
+                        z = queryset.filter(date_created__gt=x.get().date_created)[:5]
+                        queryset = sorted(
+                            chain(x, y, z), 
+                            key=lambda queryset: queryset.date_created, 
+                            reverse=True)
+
             return queryset
         except ObjectDoesNotExist:
             raise NotFound(detail=_("Tidak ditemukan."))
@@ -161,7 +182,7 @@ class CommentApiView(viewsets.ViewSet):
     # Return a response
     def get_response(self, serializer, serializer_parent=None, *args, **kwargs):
         """ Output to endpoint """
-        response = {}
+        response = dict()
         response['count'] = PAGINATOR.page.paginator.count
         response['navigate'] = {
             'previous': PAGINATOR.get_previous_link(),
@@ -176,6 +197,7 @@ class CommentApiView(viewsets.ViewSet):
         params = request.query_params
         protest_uuid = params.get('protest_uuid', None)
         parent_uuid = params.get('parent_uuid', None)
+        notified_uuid = params.get('notified_uuid', None)
         limit = params.get('limit', None)
 
         if protest_uuid:
@@ -186,7 +208,8 @@ class CommentApiView(viewsets.ViewSet):
 
         # Get protest objects...
         queryset = self.get_object(
-            protest_uuid=protest_uuid, limit=limit, parent_uuid=parent_uuid)
+            protest_uuid=protest_uuid, limit=limit, parent_uuid=parent_uuid,
+            notified_uuid=notified_uuid)
         queryset_paginator = PAGINATOR.paginate_queryset(
             queryset, request)
         serializer = CommentSerializer(

@@ -11,7 +11,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ObjectDoesNotExist
 
 # THIRD PARTY
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status as response_status, viewsets
 from rest_framework.pagination import PageNumberPagination
@@ -37,7 +37,7 @@ PAGINATOR = PageNumberPagination()
 
 class ThumbedApiView(viewsets.ViewSet):
     lookup_field = 'uuid'
-    permission_classes = (AllowAny,)
+    permission_classes = (IsAuthenticated,)
     permission_action = {
         # Disable update if not owner
         'update': [IsThumberOrReject],

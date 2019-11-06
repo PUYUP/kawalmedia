@@ -1,0 +1,2 @@
+request.data.get() digunakan untuk ambil data dari form
+request.GET.get() digunakan untuk ambil data dari URL

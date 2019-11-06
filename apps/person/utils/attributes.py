@@ -6,6 +6,7 @@ from django.db import IntegrityError
 from django.db.models import Q
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.contenttypes.models import ContentType
+from django.core.files.storage import default_storage
 
 from utils.validators import get_model
 
@@ -56,7 +57,7 @@ def set_attributes(entity, *agrs, **kwargs):
     if Attribute and AttributeValue and entity:
         roles = None
         attributes = None
-        attribute_params = {}
+        attribute_params = dict()
 
         # Check user has roles
         if entity and hasattr(entity, 'roles'):
@@ -93,28 +94,28 @@ def set_attributes(entity, *agrs, **kwargs):
         # If entity attribute ready, create the default values
         attributes = attributes.filter(**attribute_params)
         if attributes.exists():
-            values_list = []
+            values_list = list()
             for attr in attributes:
                 # Make sure not append if value is ready
                 try:
                     # Make sure set attribute based on target object
                     value_obj = entity.attribute_values.get(
-                        attribute__type=attr.type,
+                        attribute__field_type=attr.field_type,
                         attribute__identifier=attr.identifier)
                 except ObjectDoesNotExist:
                     value_obj = None
 
                 # If value not ready, append it
                 if not value_obj:
-                    model_field = 'value_%s' % attr.type
+                    model_field = 'value_%s' % attr.field_type
                     attr_obj = AttributeValue(
                         attribute=attr,
                         content_object=entity)
 
                     # Value for option and multi must set from their ForeignKey
-                    if attr.type == 'option':
+                    if attr.field_type == 'option':
                         pass
-                    elif attr.type == 'multi_option':
+                    elif attr.field_type == 'multi_option':
                         pass
                     else:
                         setattr(attr_obj, model_field, None)
@@ -136,19 +137,19 @@ def assign_attributes(entity, *agrs, **kwargs):
     attribute_objects = kwargs.get('attribute_objects', None)
     attribute_keys = kwargs.get('attribute_keys', None)
     attribute_keys_define = kwargs.get('attribute_keys_define', None)
-    attribute_values_list = []
+    attribute_values_list = list()
 
     if attribute_objects and attribute_keys and attribute_keys_define:
         for attr in attribute_objects:
-            model_field = 'value_%s' % attr.type
+            model_field = 'value_%s' % attr.field_type
             attr_value_obj = AttributeValue(
                 attribute=attr,
                 content_object=entity)
 
             # Value for option and multi must set from their ForeignKey
-            if attr.type == 'option':
+            if attr.field_type == 'option':
                 pass
-            elif attr.type == 'multi_option':
+            elif attr.field_type == 'multi_option':
                 pass
             else:
                 setattr(attr_value_obj, model_field, None)
@@ -183,7 +184,7 @@ def update_attribute_values(entity, *agrs, **kwargs):
 
     # Check database model Attribute
     if Attribute and AttributeValue and values:
-        attr_values_obj, attr_values_type, attribute_keys = [], [], []
+        attr_values_obj, attr_values_type, attribute_keys = list(), list(), list()
 
         try:
             values = dict(values.lists())
@@ -237,7 +238,7 @@ def update_attribute_values(entity, *agrs, **kwargs):
         # Escort has attributes
         if attribute_values and attribute_values.exists():
             for attr in attribute_values:
-                attr_type = attr.attribute.type
+                attr_type = attr.attribute.field_type
                 model_field = 'value_%s' % attr_type
                 identifier = attr.attribute.identifier
                 attr_obj = attribute_values.get(
@@ -252,6 +253,7 @@ def update_attribute_values(entity, *agrs, **kwargs):
                 # Set arguments
                 if attr_type == 'file' or attr_type == 'image':
                     arguments = {'instance': attr_obj, 'value': value}
+                    storage_name = default_storage.__class__.__name__
 
                 # Value for option and multi must set from their ForeignKey
                 if attr_type == 'option':
@@ -269,10 +271,16 @@ def update_attribute_values(entity, *agrs, **kwargs):
                     getattr(attr_obj, model_field).set(filter(None, value))
                 elif attr_type == 'file':
                     # Upload file
-                    loop.run_in_executor(None, upload_file, arguments)
+                    if storage_name == 'GoogleCloudStorage':
+                        upload_file(arguments)
+                    else:
+                        loop.run_in_executor(None, upload_file, arguments)
                 elif attr_type == 'image':
                     # Upload image
-                    loop.run_in_executor(None, upload_image, arguments)
+                    if storage_name == 'GoogleCloudStorage':
+                        upload_image(arguments)
+                    else:
+                        loop.run_in_executor(None, upload_image, arguments)
                 else:
                     # Set the value
                     setattr(attr_obj, model_field, value)

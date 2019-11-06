@@ -12,7 +12,7 @@ from rest_framework.exceptions import (
     NotFound, NotAcceptable, PermissionDenied)
 
 # PERSON UTILS
-from ....person.utils.auths import check_verified_email, check_verified_phone
+from ....person.utils.auths import check_validation_passed
 
 # PROJECT UTILS
 from utils.validators import get_model
@@ -77,7 +77,7 @@ class SingleProtestSerializer(serializers.ModelSerializer):
         return None
 
     def get_attribute_values(self, obj):
-        values_dict = {}
+        values_dict = dict()
         request = self.context['request']
 
         # Has attribute
@@ -89,7 +89,7 @@ class SingleProtestSerializer(serializers.ModelSerializer):
 
             if values.exists():
                 for value in values:
-                    type = value.attribute.type
+                    type = value.attribute.field_type
                     identifier = value.attribute.identifier
                     name = 'value_%s' % type
                     content = getattr(value, name)
@@ -144,7 +144,7 @@ class CreateProtestSerializer(serializers.ModelSerializer):
 
         # Validate media defined
         try:
-            media_uuid = kwargs['data']['media_uuid']
+            media_uuid = data['media_uuid']
         except KeyError:
             raise NotFound()
 
@@ -154,7 +154,7 @@ class CreateProtestSerializer(serializers.ModelSerializer):
             uuid_init=media_uuid)
 
         if media_obj:
-            kwargs['data']['media'] = media_obj.pk
+            data['media'] = media_obj.pk
         super().__init__(**kwargs)
 
     @transaction.atomic
@@ -192,13 +192,8 @@ class CreateProtestSerializer(serializers.ModelSerializer):
         if person is None:
             raise NotAcceptable()
 
-        is_verified_phone = check_verified_phone(self, person=person)
-        if is_verified_phone is False:
-            raise PermissionDenied(detail=_("Nomor ponsel belum diverifikasi."))
-
-        is_verified_email = check_verified_email(self, person=person)
-        if is_verified_email is False:
-            raise PermissionDenied(detail=_("Alamat email belum diverifikasi."))
+        if not check_validation_passed(self, request=request):
+            raise PermissionDenied(detail=_("Akun belum divalidasi."))
 
         # Create object, default status is DRAFT
         return Protest.objects.create(status=DRAFT, **validated_data)

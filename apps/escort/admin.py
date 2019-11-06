@@ -165,10 +165,10 @@ class CommentAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        return qs.prefetch_related('protest', 'commenter__user', 'parent',
-                                   'reply_for_person__user', 'reply_to_comment__parent') \
-            .select_related('protest', 'commenter__user', 'parent',
-                            'reply_for_person__user', 'reply_to_comment__parent')
+        return qs.prefetch_related('protest', 'commenter__user', 'parent', 'reply_for_person',
+                                   'reply_for_person__user', 'reply_to_comment', 'reply_to_comment__parent') \
+            .select_related('protest', 'commenter__user', 'parent', 'reply_for_person',
+                            'reply_for_person__user', 'reply_to_comment', 'reply_to_comment__parent')
 
     def save_model(self, request, obj, form, change):
         # Append request to signals
@@ -212,12 +212,12 @@ class OptionAdmin(admin.ModelAdmin):
 class AttributeAdmin(admin.ModelAdmin):
     """Extend attributes admin"""
     model = Attribute
-    list_display = ('label', 'identifier', 'type', 'entity_type',)
+    list_display = ('label', 'identifier', 'field_type', 'entity_type',)
     prepopulated_fields = {"identifier": ("label", )}
 
     def entity_type(self, obj):
         if obj.content_type:
-            entity_html = []
+            entity_html = list()
             entities = obj.content_type.all()
             for entity in entities:
                 entity_item = format_html('{}',entity)

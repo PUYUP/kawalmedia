@@ -6,7 +6,7 @@ from rest_framework.routers import DefaultRouter
 # LOAD API VIEW
 from .media.views import MediaApiView
 from .rating.views import RatingApiView
-from .attribute.views import OptionApiView, ConstantApiView
+from .attribute.views import AttributeApiView, ConstantApiView
 from .protest.views import ProtestApiView
 from .attachment.views import AttachmentApiView
 from .thumbed.views import ThumbedApiView
@@ -16,7 +16,7 @@ from .comment.views import CommentApiView
 router = DefaultRouter()
 router.register('medias', MediaApiView, basename='media')
 router.register('ratings', RatingApiView, basename='rating')
-router.register('options', OptionApiView, basename='option')
+router.register('attributes', AttributeApiView, basename='attribute')
 router.register('protests', ProtestApiView, basename='protest')
 router.register('attachments', AttachmentApiView, basename='attachment')
 router.register('thumbs', ThumbedApiView, basename='thumb')

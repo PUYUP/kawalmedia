@@ -17,6 +17,7 @@ from utils.validators import non_python_keyword, get_model
 
 # Attribute types
 TEXT = "text"
+EMAIL = "email"
 URL = "url"
 INTEGER = "integer"
 BOOLEAN = "boolean"
@@ -30,6 +31,7 @@ FILE = "file"
 IMAGE = "image"
 ATTRIBUTE_CHOICES = (
     (TEXT, _("Text")),
+    (EMAIL, _("Email")),
     (URL, _("URL")),
     (INTEGER, _("Integer")),
     (BOOLEAN, _("True / False")),
@@ -88,7 +90,7 @@ class AbstractAttribute(models.Model):
                     "and underscores, and can't start with a digit.")),
             non_python_keyword
         ])
-    type = models.CharField(
+    field_type = models.CharField(
         choices=ATTRIBUTE_CHOICES,
         default=ATTRIBUTE_CHOICES[0][0],
         max_length=20, verbose_name=_("Type"))
@@ -101,6 +103,9 @@ class AbstractAttribute(models.Model):
         verbose_name=_("Option Group"),
         help_text=_('Select option group if using '
                     'type "Option" or "Multi Option"'))
+    instruction = models.TextField(_('Instruction'), blank=True, null=True)
+    placeholder = models.CharField(max_length=255, blank=True, null=True)
+    secured = models.BooleanField(_('Secured'), default=False)
     required = models.BooleanField(_('Required'), default=False)
 
     class Meta:
@@ -115,19 +120,19 @@ class AbstractAttribute(models.Model):
     @property
     def is_option(self):
         if hasattr(self, 'OPTION'):
-            return self.type == self.OPTION
+            return self.field_type == self.OPTION
         pass
 
     @property
     def is_multi_option(self):
         if hasattr(self, 'MULTI_OPTION'):
-            return self.type == self.MULTI_OPTION
+            return self.field_type == self.MULTI_OPTION
         pass
 
     @property
     def is_file(self):
         if hasattr(self, 'FILE') or hasattr(self, 'IMAGE'):
-            return self.type in [self.FILE, self.IMAGE]
+            return self.field_type in [self.FILE, self.IMAGE]
         pass
 
     def _save_file(self, value_obj, value):
@@ -170,8 +175,8 @@ class AbstractAttribute(models.Model):
     def save_value(self, entity, value):   # noqa: C901 too complex
         AttributeValue = get_model('escort', 'AttributeValue')
         try:
-            value_obj = AttributeValue.get(attribute=self,
-                                           content_object=entity)
+            value_obj = AttributeValue.get(
+                attribute=self, content_object=entity)
         except AttributeValue.DoesNotExist:
             # FileField uses False for announcing deletion of the file
             # not creating a new value
@@ -189,7 +194,7 @@ class AbstractAttribute(models.Model):
             self._save_value(value_obj, value)
 
     def validate_value(self, value):
-        validator = getattr(self, '_validate_%s' % self.type)
+        validator = getattr(self, '_validate_%s' % self.field_type)
         validator(value)
 
     # Validators
@@ -266,6 +271,8 @@ class AbstractAttributeValue(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False)
     value_text = models.CharField(
         _('Text'), blank=True, null=True, max_length=255)
+    value_email = models.EmailField(
+        _('Email'), blank=True, null=True, max_length=255)
     value_url = models.URLField(
         _('URL'), blank=True, null=True, max_length=500)
     value_integer = models.IntegerField(
@@ -297,6 +304,9 @@ class AbstractAttributeValue(models.Model):
         upload_to=entity_directory_image_path, max_length=255,
         blank=True, null=True)
 
+    date_created = models.DateTimeField(auto_now_add=True, null=True)
+    date_updated = models.DateTimeField(auto_now=True, null=True)
+
     # Generic foreignkey
     content_type = models.ForeignKey(
         ContentType,
@@ -309,13 +319,13 @@ class AbstractAttributeValue(models.Model):
     content_object = GenericForeignKey('content_type', 'object_id')
 
     def _get_value(self):
-        value = getattr(self, 'value_%s' % self.attribute.type)
+        value = getattr(self, 'value_%s' % self.attribute.field_type)
         if hasattr(value, 'all'):
             value = value.all()
         return value
 
     def _set_value(self, new_value):
-        attr_label = 'value_%s' % self.attribute.type
+        attr_label = 'value_%s' % self.attribute.field_type
 
         if self.attribute.is_option and isinstance(new_value, str):
             # Need to look up instance of AttributeOption
@@ -354,7 +364,7 @@ class AbstractAttributeValue(models.Model):
         e.g. image attribute values, declare a _image_as_text property and
         return something appropriate.
         """
-        property_label = '_%s_as_text' % self.attribute.type
+        property_label = '_%s_as_text' % self.attribute.field_type
         return getattr(self, property_label, self.value)
 
     @property
@@ -377,7 +387,7 @@ class AbstractAttributeValue(models.Model):
         e.g. image attribute values, declare a _image_as_html property and
         return e.g. an <img> tag.  Defaults to the _as_text representation.
         """
-        property_label = '_%s_as_html' % self.attribute.type
+        property_label = '_%s_as_html' % self.attribute.field_type
         return getattr(self, property_label, self.value_as_text)
 
     @property

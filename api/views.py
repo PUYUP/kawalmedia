@@ -15,16 +15,18 @@ class RootApiView(APIView):
             'user': {
                 'persons': reverse('persons:person:person-list', request=request,
                                    format=format, current_app='person'),
-                'options': reverse('persons:person:option-list', request=request,
-                                   format=format, current_app='person'),
+                'attributes': reverse('persons:person:attribute-list', request=request,
+                                      format=format, current_app='person'),
+                'validations': reverse('persons:person:validation-list', request=request,
+                                       format=format, current_app='person'),
             },
             'escort': {
                 'medias': reverse('escorts:escort:media-list', request=request,
                                   format=format, current_app='escort'),
                 'ratings': reverse('escorts:escort:rating-list', request=request,
                                    format=format, current_app='escort'),
-                'options': reverse('escorts:escort:option-list', request=request,
-                                   format=format, current_app='escort'),
+                'attributes': reverse('escorts:escort:attribute-list', request=request,
+                                      format=format, current_app='escort'),
                 'protests': reverse('escorts:escort:protest-list', request=request,
                                     format=format, current_app='escort'),
                 'attachments': reverse('escorts:escort:attachment-list', request=request,
@@ -33,6 +35,10 @@ class RootApiView(APIView):
                                   format=format, current_app='escort'),
                 'comments': reverse('escorts:escort:comment-list', request=request,
                                     format=format, current_app='escort'),
+            },
+            'notice': {
+                'notifications': reverse('notices:notice:notification-list', request=request,
+                                         format=format, current_app='notice'),
             },
             'knowledgebase': {
                 'articles': reverse('knowledgebases:knowledgebase:article-list', request=request,

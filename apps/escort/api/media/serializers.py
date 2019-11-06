@@ -13,7 +13,7 @@ from rest_framework.exceptions import (
     NotFound, NotAcceptable, PermissionDenied)
 
 # PERSON UTILS
-from ....person.utils.auths import check_verified_email, check_verified_phone
+from ....person.utils.auths import check_validation_passed
 
 # PROJECT UTILS
 from utils.validators import get_model
@@ -45,18 +45,18 @@ class MediaSerializer(serializers.ModelSerializer):
                   'status', 'status_label', 'rating_average']
 
     def get_attribute_values(self, obj):
-        values_dict = {}
+        values_dict = dict()
         request = self.context['request']
         identifiers = ['logo', 'description']
 
         values = obj.attribute_values \
-            .prefetch_related('attribute') \
-            .select_related('attribute') \
+            .prefetch_related('attribute', 'content_type') \
+            .select_related('attribute', 'content_type') \
             .filter(attribute__identifier__in=identifiers)
 
         if values.exists():
             for value in values:
-                type = value.attribute.type
+                type = value.attribute.field_type
                 identifier = value.attribute.identifier
                 name = 'value_%s' % type
                 content = getattr(value, name)
@@ -89,43 +89,46 @@ class SingleMediaSerializer(serializers.ModelSerializer):
         exclude = ['id']
 
     def get_attribute_values(self, obj):
-        values_dict = {}
+        values_dict = dict()
         request = self.context['request']
         values = obj.attribute_values \
-            .prefetch_related('attribute') \
-            .select_related('attribute') \
+            .prefetch_related('attribute', 'content_type') \
+            .select_related('attribute', 'content_type') \
             .all()
 
         if values.exists():
             for value in values:
-                type = value.attribute.type
+                field_type = value.attribute.field_type
                 identifier = value.attribute.identifier
-                name = 'value_%s' % type
+                name = 'value_%s' % field_type
                 content = getattr(value, name)
 
                 # Has value
                 if content:
                     # Image and file has url
-                    if type == 'image' or type == 'file':
+                    if field_type == 'image' or field_type == 'file':
                         url = content.url
                         content = request.build_absolute_uri(url)
 
-                    if type == 'option':
+                    if field_type == 'option':
                         content = content.option
 
-                    if type == 'multi_option':
+                    if field_type == 'multi_option':
                         option = content \
                             .prefetch_related('attributevalue') \
                             .select_related('attributevalue') \
                             .defer('attributevalue') \
                             .values('option')
                         content = option
-                    values_dict[identifier] = content
+                    values_dict[identifier] = {
+                        'uuid': value.uuid,
+                        'object': content,
+                    }
             return values_dict
         return None
 
     def get_ratings(self, obj):
-        scores = {}
+        scores = dict()
         for sc in SCORE_CHOICES:
             val = sc[0]
             key = slugify(sc[1])
@@ -159,14 +162,32 @@ class CreateMediaSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Media
-        fields = ['creator', 'uuid', 'label', 'publication']
-        read_only_fields = ['uuid']
+        fields = ('creator', 'uuid', 'label', 'publication',)
+        read_only_fields = ('uuid',)
         extra_kwargs = {
             'creator': {'write_only': True}
         }
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    @transaction.atomic
+    def create(self, validated_data):
+        try:
+            request = self.context['request']
+        except KeyError:
+            raise NotAcceptable()
+
+        # Append request to objects
+        if request:
+            setattr(Media, 'request', request)
+
+        person = getattr(request.user, 'person', None)
+        if person is None:
+            raise NotAcceptable()
+
+        if not check_validation_passed(self, request=request):
+            raise PermissionDenied(detail=_("Akun belum divalidasi."))
+
+        # Create object, default status is PENDING
+        return Media.objects.create(status=PENDING, **validated_data)
 
     @transaction.atomic
     def update(self, instance, validated_data):
@@ -184,29 +205,3 @@ class CreateMediaSerializer(serializers.ModelSerializer):
         # Update attribute
         update_attribute_values(instance, identifiers=None, values=request.data)
         return instance
-
-    @transaction.atomic
-    def create(self, validated_data):
-        try:
-            request = self.context['request']
-        except KeyError:
-            raise NotAcceptable()
-
-        # Append request to objects
-        if request:
-            setattr(Media, 'request', request)
-
-        person = getattr(request.user, 'person', None)
-        if person is None:
-            raise NotAcceptable()
-
-        is_verified_phone = check_verified_phone(self, person=person)
-        if is_verified_phone is False:
-            raise PermissionDenied(detail=_("Nomor ponsel belum diverifikasi."))
-
-        is_verified_email = check_verified_email(self, person=person)
-        if is_verified_email is False:
-            raise PermissionDenied(detail=_("Alamat email belum diverifikasi."))
-
-        # Create object, default status is PENDING
-        return Media.objects.create(status=PENDING, **validated_data)

@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
         ),
         migrations.AlterField(
             model_name='attribute',
-            name='type',
+            name='field_type',
             field=models.CharField(choices=[('text', 'Text'), ('url', 'URL'), ('integer', 'Integer'), ('boolean', 'True / False'), ('float', 'Float'), ('richtext', 'Rich Text'), ('date', 'Date'), ('datetime', 'Datetime'), ('option', 'Option'), ('multi_option', 'Multi Option'), ('file', 'File'), ('image', 'Image')], default='text', max_length=20, verbose_name='Type'),
         ),
         migrations.AlterUniqueTogether(

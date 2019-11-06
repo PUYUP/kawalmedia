@@ -4,19 +4,20 @@ import urllib
 import json
 
 from django.conf import settings
+from django.db.models import Q
+from django.contrib.contenttypes.models import ContentType
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import (
     PasswordResetTokenGenerator,
-    default_token_generator
-)
+    default_token_generator)
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils import six
-from django.utils.http import (
-    urlsafe_base64_encode,
-    urlsafe_base64_decode
-)
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes
 from django.utils.translation import ugettext_lazy as _
+
+# PROJECT UTILS
+from utils.validators import get_model
 
 from .senders import (
     send_verification_email,
@@ -25,50 +26,43 @@ from .senders import (
     send_secure_email
 )
 
+Validation = get_model('person', 'Validation')
+ValidationValue = get_model('person', 'ValidationValue')
 UserModel = get_user_model()
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 
 
-def check_verified_email(self, *args, **kwargs):
-    """ Check person validate email status """
-    person = kwargs.get('person', None)
-    if person is None:
-        return None
+def check_validation_passed(self, *agrs, **kwargs):
+    request = kwargs.get('request', None)
+    if not request:
+        return False
 
-    # Check person verified_email or not
-    # The 'verified_email' is identifier set in Person Options
-    try:
-        is_verified_email = person.options.get(identifier='verified_email')
-    except ObjectDoesNotExist:
-        is_verified_email = None
-    return True if is_verified_email else False
+    person = getattr(request.user, 'person', None)
+    if not person:
+        return False
 
+    content_type = ContentType.objects.get_for_model(person)
+    validation_type = Validation.objects.filter(required=True)
 
-def check_verified_phone(self, *args, **kwargs):
-    """ Check person validate telephone status """
-    person = kwargs.get('person', None)
-    if person is None:
-        return None
+    if not validation_type.exists():
+        return True
 
-    # Check person verified_phone or not
-    # The 'verified_phone' is identifier set in Person Options
-    try:
-        is_verified_phone = person.options.get(identifier='verified_phone')
-    except ObjectDoesNotExist:
-        is_verified_phone = None
-    return True if is_verified_phone else False
+    validation_value = ValidationValue.objects.filter(
+        Q(validation__required=True),
+        Q(verified=True),
+        Q(content_type=content_type.pk),
+        Q(object_id=person.pk))
+
+    # Compare validation type with the value
+    # If value same indicated all validation passed
+    return validation_type.count() == validation_value.count()
 
 
 class TokenGenerator(PasswordResetTokenGenerator):
     def _make_hash_value(self, person, timestamp):
-        # Check person verified mail and telp or not
-        # The 'verified_email' and 'verified_phone' from Person Options
-        is_verified_email = check_verified_email(self, person=person)
-        is_verified_phone = check_verified_phone(self, person=person)
         return (
-            six.text_type(person.uuid) + six.text_type(timestamp) +
-            six.text_type(is_verified_email) + six.text_type(is_verified_phone)
+            six.text_type(person.uuid) + six.text_type(timestamp)
         )
 
 
@@ -83,7 +77,7 @@ def random_string():
     return code
 
 
-def get_user(self, email):
+def get_user_from_email(self, email=None):
     """Given an email, return matching user(s)
     who should receive a secure code."""
     if email:
@@ -95,18 +89,18 @@ def get_user(self, email):
     return None
 
 
-def get_user_with_uuid(self, uuid_init=None):
+def get_user_from_uuid(self, person_uuid=None):
     """Get person object by uuid"""
-    if uuid_init is None:
+    if person_uuid is None:
         return None
 
     try:
-        uuid_init = uuid.UUID(uuid_init)
+        person_uuid = uuid.UUID(person_uuid)
     except ValueError:
         return None
 
     try:
-        user = UserModel.objects.get(person__uuid=uuid_init)
+        user = UserModel.objects.get(person__uuid=person_uuid)
     except ObjectDoesNotExist:
         user = None
     return user
@@ -115,20 +109,20 @@ def get_user_with_uuid(self, uuid_init=None):
 def get_person_uuid(self, secure_code=None):
     """Get person uuid from secure code
     In session person uuid is encryped"""
-    if secure_code is None:
+    if not secure_code:
         return None
 
     session = self.request.session.get(secure_code, None)
-    if session is None:
+    if not session:
         return None
 
     try:
-        return force_bytes(urlsafe_base64_decode(session['uuid']))
+        return force_bytes(urlsafe_base64_decode(session['person_uuid']))
     except KeyError:
         return None
 
 
-def get_person(self, *args, **kwargs):
+def get_person_from_secure_code(self, *args, **kwargs):
     """Get person from secure code"""
     secure_code = kwargs.get('secure_code', None)
     if secure_code is None:
@@ -155,26 +149,26 @@ def get_person(self, *args, **kwargs):
 def create_secure_code(self, *args, **kwargs):
     """Generate secure code, make sure we check from user by email"""
     email = kwargs.get('email', None)
-    identifier = kwargs.get('identifier', None)
 
-    # If user loggedin
+    # Get user from email if not logged in
     if self.request.user.is_authenticated:
         user = self.request.user
     else:
-        user = get_user(self, email)
+        user = get_user_from_email(self, email)
         if user is None:
             return None
 
     # Person exist in user
     if hasattr(user, 'person'):
-        context = {}
-        tmpkey = 'KM_'.upper()
+        context = dict()
+        tmpkey = 'KM'.upper()
         delete_key = None
         person = user.person
         secure_code = '%s%s' % (tmpkey, random_string())
 
         # Return data
-        context['uuid'] = urlsafe_base64_encode(force_bytes(person.uuid))
+        context['person_uuid'] = urlsafe_base64_encode(
+            force_bytes(person.uuid))
         context['token'] = account_verification_token.make_token(person)
         context['secure_code'] = secure_code
 
@@ -204,88 +198,60 @@ def create_secure_code(self, *args, **kwargs):
 def validate_secure_code(self, *agrs, **kwargs):
     """Validate secure code valid or not"""
     secure_code = kwargs.get('secure_code', None)
-    if secure_code is None:
+    is_password_request = kwargs.get('is_password_request', None)
+
+    if not secure_code:
         return None
 
     session = self.request.session.get(secure_code, None)
     if session is None:
         return None
 
-    person = get_person(self, secure_code=secure_code)
+    person = get_person_from_secure_code(self, secure_code=secure_code)
     token = session['token']
+
+    # Prevent re-used delete from session
+    # But if password request, hold it
+    if not is_password_request:
+        del self.request.session[secure_code]
     return account_verification_token.check_token(person, token)
 
 
-def send_secure_code(self, *agrs, **kwargs):
-    """Send secure code to person
-    This action required authentication
-    Get user from request"""
+def send_secure_code(self, *args, **kwargs):
+    # Email or SMS
+    # 1 = Email, 2 = SMS
+    method = kwargs.get('method', None)
     email = kwargs.get('email', None)
-    telephone = kwargs.get('telephone', None)
-    action = kwargs.get('action', None)
-    identifier = kwargs.get('identifier', None)
+    new_value = kwargs.get('new_value', None)
+    user = kwargs.get('user', None)
 
-    # Check email, telephone or action, this value required!
-    if (not email or not telephone) and not action:
+    if not method and not user:
         return None
 
-    # Get user
-    if self.request.user.is_authenticated:
-        user = self.request.user
-    else:
-        user = get_user(self, email)
-
-    # Get person from user
     person = getattr(user, 'person', None)
+    if person:
+        # Generate secure code
+        # Whatever method, email used for check use exist
+        secure_data = create_secure_code(self, email=email)
+        if not secure_data:
+            return None
 
-    # Generate secure code
-    secure_code = create_secure_code(self, email=email, identifier=identifier)
-    if not secure_code:
-        return None
+        # Collect data for email
+        params = {
+            'user': user,
+            'request': self.request,
+            'email': email,
+            'new_value': new_value,
+            'label': _("Verifikasi")
+        }
 
-    # Collect data for email
-    verification_data = {
-        'user': person.user,
-        'email': email,
-        'telephone': telephone,
-        'request': self.request,
-    }
+        # Send with email
+        if method == 1:
+            loop.run_in_executor(None, send_verification_email, params)
 
-    # Send secure code for verification (used for new registered user)
-    if action == 'account_verification':
-        # Check person verified mail, telp or not
-        # Send verification to mail
-        if email:
-            is_verified_email = check_verified_email(self, person=person)
+        # Send with SMS
+        if method == 2:
+            loop.run_in_executor(None, send_verification_sms, params)
 
-        if email and is_verified_email is False:
-            # Send email!
-            loop.run_in_executor(
-                None, send_verification_email, verification_data)
-            return secure_code
-
-        # Send verification to telephone
-        if telephone:
-            is_verified_phone = check_verified_phone(self, person=person)
-
-        if telephone and is_verified_phone is False:
-            # Send SMS
-            loop.run_in_executor(
-                None, send_verification_sms, verification_data)
-            return secure_code
-
-    # Reset password
-    if action == 'password_request':
-        # Reset by email
-        if settings.AUTH_VERIFICATION_METHOD == 0:
-            # Send email!
-            loop.run_in_executor(None, send_password_email, verification_data)
-        return secure_code
-
-    # Secure action
-    if action == 'secure_validation':
-        if settings.AUTH_VERIFICATION_METHOD == 0:
-            # Send email!
-            loop.run_in_executor(None, send_secure_email, verification_data)
-        return secure_code
+        return secure_data
     return None

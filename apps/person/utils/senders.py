@@ -11,18 +11,23 @@ SITE_NAME = settings.SITE_NAME
 
 def send_verification_email(data=None):
     """ Send email verification to person """
-    if data is None:
-        return None
+    if not data:
+        raise NotFound()
 
     user = data.get('user', None)
     request = data.get('request', None)
+    new_value = data.get('new_value', None)
     email = data.get('email', None)
+    label = data.get('label', _("Verifikasi"))
     username = user.username
+
+    # This secure code append to request before this action
+    # And now get back
     secure_code = request.secure_code
 
     try:
         # Parameter
-        subject = _("Verifikasi %(site_name)s") % {'site_name': SITE_NAME}
+        subject = _("Otentikasi Aksi %(site_name)s") % {'site_name': SITE_NAME}
         from_email = settings.DEFAULT_FROM_EMAIL
         to = email
 
@@ -44,35 +49,33 @@ def send_verification_email(data=None):
         msg.attach_alternative(html, "text/html")
         return msg.send()
     except BadHeaderError:
-        raise NotFound(detail=_('Email not send.'))
+        raise NotFound(detail=_('Email tidak terkirim.'))
 
 
 def send_verification_sms(data=None):
     """ Send sms verification to person """
-    if data is None:
-        return None
+    if not data:
+        raise NotFound()
 
     user = data.get('user', None)
     request = data.get('request', None)
-    email = data.get('email', None)
-    telephone = data.get('telephone', None)
+    new_value = data.get('new_value', None)
     username = user.username
     secure_code = request.secure_code
 
-    if telephone[:1] == '0':
+    if new_value[:1] == '0':
         # Replace with 62
-        telephone = telephone.replace('0', '62', 1)
+        new_value = new_value.replace('0', '62', 1)
 
     # Number is valid
-    country_code = telephone[:2]
+    country_code = new_value[:2]
 
-    # Number valid country code and min length is 10
-    if country_code == '62' and len(telephone) > 10:
+    # Number valid country code and min length is 8
+    if country_code == '62' and len(new_value) > 8:
         content = urllib.parse.quote(
             'Dari ' + settings.SITE_NAME + '. Kode Otentikasi: ' +
             secure_code + '. JANGAN BERIKAN KESIAPAPUN')
-        url = 'http://103.81.246.59:20003/sendsms?account=numb_rahman3'
-        '&password=123456&numbers=' + telephone + '&content=' + content
+        url = 'http://103.81.246.59:20003/sendsms?account=numb_rahman3&password=123456&numbers=' + new_value + '&content=' + content
         r = urllib.request.Request(url)
         r.add_header('Content-Type', 'application/json')
         r.add_header('Accept', 'application/json')

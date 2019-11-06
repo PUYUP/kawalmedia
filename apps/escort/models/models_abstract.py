@@ -347,7 +347,7 @@ class AbstractComment(models.Model):
         blank=True,
         null=True,
         on_delete=models.SET_NULL,
-        related_name='children',
+        related_name='parent_comment',
         verbose_name=_("Parent comment"))
     reply_to_comment = models.ForeignKey(
         'self',

@@ -209,7 +209,7 @@ class MediaApiView(viewsets.ViewSet):
     # Return a response
     def get_response(self, serializer, serializer_parent=None, *args, **kwargs):
         """ Output to endpoint """
-        response = {}
+        response = dict()
         limit = kwargs.get('limit', None)
 
         if serializer.data and limit:
@@ -239,8 +239,9 @@ class MediaApiView(viewsets.ViewSet):
         match = params.get('match', None)
         limit = params.get('limit', None)
 
-        queryset = self.get_object(creator_uuid=creator_uuid, limit=limit,
-                                   status=status, term=term, match=match)
+        queryset = self.get_object(
+            creator_uuid=creator_uuid, limit=limit,
+            status=status, term=term, match=match)
 
         if not limit:
             queryset = PAGINATOR.paginate_queryset(queryset, request)

@@ -14,7 +14,7 @@ from rest_framework.exceptions import (
 from utils.validators import get_model
 
 # PERSON UTILS
-from ....person.utils.auths import check_verified_email, check_verified_phone
+from ....person.utils.auths import check_validation_passed
 
 # LOCAL UTILS
 from ...utils.generals import object_from_uuid
@@ -58,13 +58,13 @@ class CreateThumbedSerializer(serializers.ModelSerializer):
 
         # Validate entity_uuid
         try:
-            entity_uuid = kwargs['data']['entity_uuid']
+            entity_uuid = data['entity_uuid']
         except KeyError:
             raise NotFound()
 
         # Validate entity_index
         try:
-            entity_index = kwargs['data']['entity_index']
+            entity_index = data['entity_index']
         except KeyError:
             raise NotFound()
 
@@ -94,8 +94,8 @@ class CreateThumbedSerializer(serializers.ModelSerializer):
         if entity_object:
             entity_type = ContentType.objects.get_for_model(entity_object)
 
-            kwargs['data']['object_id'] = entity_object.pk
-            kwargs['data']['content_type'] = entity_type.pk
+            data['object_id'] = entity_object.pk
+            data['content_type'] = entity_type.pk
         super().__init__(**kwargs)
 
     @transaction.atomic
@@ -113,13 +113,8 @@ class CreateThumbedSerializer(serializers.ModelSerializer):
         if person is None:
             raise NotAcceptable()
 
-        is_verified_phone = check_verified_phone(self, person=person)
-        if is_verified_phone is False:
-            raise PermissionDenied(detail=_("Nomor ponsel belum diverifikasi."))
-
-        is_verified_email = check_verified_email(self, person=person)
-        if is_verified_email is False:
-            raise PermissionDenied(detail=_("Alamat email belum diverifikasi."))
+        if not check_validation_passed(self, request=request):
+            raise PermissionDenied(detail=_("Akun belum divalidasi."))
 
         return Thumbed.objects.create(**validated_data)
 

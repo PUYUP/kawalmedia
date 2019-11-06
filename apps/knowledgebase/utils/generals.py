@@ -79,5 +79,5 @@ def find_value_with_key(the_key, the_tuple):
 def tuple_to_dict(tuple_list):
     result = dict()
     for key, value in tuple_list:
-        result.setdefault(key, {}).update(value)
+        result.setdefault(key= dict()).update(value)
     return result

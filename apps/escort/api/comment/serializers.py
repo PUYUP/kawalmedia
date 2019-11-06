@@ -12,7 +12,7 @@ from rest_framework.exceptions import (
     NotFound, NotAcceptable, PermissionDenied)
 
 # PERSON UTILS
-from ....person.utils.auths import check_verified_email, check_verified_phone
+from ....person.utils.auths import check_validation_passed
 
 # PROJECT UTILS
 from utils.validators import get_model
@@ -26,6 +26,7 @@ from ...utils.auths import CurrentPersonDefault
 Person = get_model('person', 'Person')
 Protest = get_model('escort', 'Protest')
 Comment = get_model('escort', 'Comment')
+Notification = get_model('notice', 'Notification')
 
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -119,7 +120,7 @@ class CreateCommentSerializer(serializers.ModelSerializer):
 
         # Validate protest defined
         try:
-            protest_uuid = kwargs['data']['protest_uuid']
+            protest_uuid = data['protest_uuid']
         except KeyError:
             raise NotFound()
 
@@ -129,11 +130,11 @@ class CreateCommentSerializer(serializers.ModelSerializer):
             uuid_init=protest_uuid)
 
         if protest_obj:
-            kwargs['data']['protest'] = protest_obj.pk
+            data['protest'] = protest_obj.pk
 
         # Validate self, this use if reply to
         try:
-            comment_uuid = kwargs['data']['parent_uuid']
+            comment_uuid = data['parent_uuid']
         except KeyError:
             comment_uuid = None
 
@@ -144,11 +145,11 @@ class CreateCommentSerializer(serializers.ModelSerializer):
                 uuid_init=comment_uuid)
 
             if comment_obj:
-                kwargs['data']['parent'] = comment_obj.pk
+                data['parent'] = comment_obj.pk
 
         # Validate reply_to_comment
         try:
-            reply_to_comment_uuid = kwargs['data']['reply_to_comment']
+            reply_to_comment_uuid = data['reply_to_comment']
         except KeyError:
             reply_to_comment_uuid = None
 
@@ -159,11 +160,11 @@ class CreateCommentSerializer(serializers.ModelSerializer):
                 uuid_init=reply_to_comment_uuid)
 
             if reply_to_comment_obj:
-                kwargs['data']['reply_to_comment'] = reply_to_comment_obj.pk
+                data['reply_to_comment'] = reply_to_comment_obj.pk
 
         # Validate reply_for_person
         try:
-            reply_for_person_uuid = kwargs['data']['reply_for_person']
+            reply_for_person_uuid = data['reply_for_person']
         except KeyError:
             reply_for_person_uuid = None
 
@@ -174,9 +175,30 @@ class CreateCommentSerializer(serializers.ModelSerializer):
                 uuid_init=reply_for_person_uuid)
 
             if reply_for_person_obj:
-                kwargs['data']['reply_for_person'] = reply_for_person_obj.pk
+                data['reply_for_person'] = reply_for_person_obj.pk
 
         super().__init__(**kwargs)
+
+    @transaction.atomic
+    def create(self, validated_data):
+        try:
+            request = self.context['request']
+        except KeyError:
+            raise NotAcceptable()
+
+        # Append request to objects
+        if request:
+            setattr(Comment, 'request', request)
+
+        person = getattr(request.user, 'person', None)
+        if not person:
+            raise NotAcceptable()
+
+        if not check_validation_passed(self, request=request):
+            raise PermissionDenied(detail=_("Akun belum divalidasi."))
+
+        # Create object, default status is DRAFT
+        return Comment.objects.create(**validated_data)
 
     @transaction.atomic
     def update(self, instance, validated_data):
@@ -192,29 +214,3 @@ class CreateCommentSerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
-
-    @transaction.atomic
-    def create(self, validated_data):
-        try:
-            request = self.context['request']
-        except KeyError:
-            raise NotAcceptable()
-
-        # Append request to objects
-        if request:
-            setattr(Comment, 'request', request)
-
-        person = getattr(request.user, 'person', None)
-        if person is None:
-            raise NotAcceptable()
-
-        is_verified_phone = check_verified_phone(self, person=person)
-        if is_verified_phone is False:
-            raise PermissionDenied(detail=_("Nomor ponsel belum diverifikasi."))
-
-        is_verified_email = check_verified_email(self, person=person)
-        if is_verified_email is False:
-            raise PermissionDenied(detail=_("Alamat email belum diverifikasi."))
-
-        # Create object, default status is DRAFT
-        return Comment.objects.create(**validated_data)

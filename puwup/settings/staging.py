@@ -1,4 +1,5 @@
 from datetime import timedelta
+from google.oauth2 import service_account
 
 from django.conf import settings
 from .base import *
@@ -11,6 +12,7 @@ PROJECT_APPS = [
     'rest_framework',
     'apps.person.apps.PersonConfig',
     'apps.escort.apps.EscortConfig',
+    'apps.notice.apps.NoticeConfig',
     'apps.knowledgebase.apps.KnowledgeBaseConfig'
 ]
 INSTALLED_APPS = INSTALLED_APPS + PROJECT_APPS
@@ -129,13 +131,13 @@ CACHES = {
 # Django Email
 # ------------------------------------------------------------------------------
 # https://docs.djangoproject.com/en/2.2/topics/email/
-DEFAULT_FROM_EMAIL = '%s <teste.coenocyte@gmail.com>' % SITE_NAME
+DEFAULT_FROM_EMAIL = '%s <kawalmediacom@gmail.com>' % SITE_NAME
 DEFAULT_TO_EMAIL = 'hellopuyup@gmail.com'
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_USE_TLS = True
 EMAIL_PORT = 587
-EMAIL_HOST_USER = 'teste.coenocyte@gmail.com'
+EMAIL_HOST_USER = 'kawalmediacom@gmail.com'
 EMAIL_HOST_PASSWORD = 'ind0nesi@'
 
 # 0 = Email, 1 = Phone number
@@ -146,3 +148,13 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 # https://docs.djangoproject.com/en/2.2/ref/csrf/
 CSRF_HEADER_NAME = 'HTTP_X_CSRFTOKEN'
 CSRF_USE_SESSIONS = False
+
+
+# Django Storages
+# ------------------------------------------------------------------------------
+# https://django-storages.readthedocs.io/en/latest/backends/gcloud.html
+DEFAULT_FILE_STORAGE = 'storages.backends.gcloud.GoogleCloudStorage'
+GS_BUCKET_NAME = 'kawal-media'
+GS_CREDENTIALS = service_account.Credentials.from_service_account_file(
+    os.path.join(PROJECT_PATH, 'utils/gcloud/') + 'PUYUP-bc46dead37a6.json'
+)

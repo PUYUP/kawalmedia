@@ -53,6 +53,9 @@ class AbstractPerson(models.Model):
     attribute_values = GenericRelation(
         'person.AttributeValue',
         related_query_name='person')
+    validation_values = GenericRelation(
+        'person.ValidationValue',
+        related_query_name='person')
     options = models.ManyToManyField(
         'person.Option', blank=True, verbose_name=_("Options"))
 

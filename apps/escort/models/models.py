@@ -4,7 +4,7 @@ from .models_abstract import *
 from .models_attribute import *
 from utils.validators import is_model_registered
 
-__all__ = []
+__all__ = list()
 
 
 # 0

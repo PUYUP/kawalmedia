@@ -1,5 +1,6 @@
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
+from django.contrib.contenttypes.models import ContentType
 from django.db import IntegrityError
 from django.db.models import Q
 
@@ -14,10 +15,45 @@ from utils.validators import get_model
 
 UserModel = get_user_model()
 AttributeValue = get_model('person', 'AttributeValue')
+Validation = get_model('person', 'Validation')
+ValidationValue = get_model('person', 'ValidationValue')
 
 
 # Create signals
+def user_handler(sender, instance, created, **kwargs):
+    if not created:
+        person = getattr(instance, 'person', None)
+
+        if person:
+            content_type = ContentType.objects.get_for_model(person)
+            validation_type = Validation.objects.get(identifier='email')
+
+            validation_value, created = ValidationValue.objects \
+                .update_or_create(
+                    validation=validation_type,
+                    object_id=person.pk,
+                    content_type=content_type)
+            validation_value.value_email = instance.email
+            validation_value.save()
+
+
 def person_handler(sender, instance, created, **kwargs):
+    user = getattr(instance, 'user', None)
+    is_register = getattr(instance, 'is_register', None)
+
+    if is_register and user:
+        content_type = ContentType.objects.get_for_model(instance)
+        validation_type = Validation.objects.get(identifier='email')
+
+        validation_value, created = ValidationValue.objects \
+            .update_or_create(
+                validation=validation_type,
+                object_id=instance.pk,
+                content_type=content_type,
+                verified=False)
+        validation_value.value_email = user.email
+        validation_value.save()
+
     # Attribute created after save because roles exists after add action
     if created is not True:
         # Set attributes by user Roles
@@ -27,7 +63,7 @@ def person_handler(sender, instance, created, **kwargs):
         if hasattr(instance, 'request'):
             request = instance.request
             data = request.data if hasattr(request, 'data') else None
-            keys, values = [], {}
+            keys, values = list(), dict()
 
             if data is not None:
                 for key in data:
@@ -50,9 +86,9 @@ def attribute_handler(sender, instance, created, **kwargs):
                 ~Q(person__attribute_values__attribute__identifier=identifier)
             ).distinct()
 
-            attributes_list = []
+            attributes_list = list()
             if users.exists():
-                model_field = 'value_%s' % instance.type
+                model_field = 'value_%s' % instance.field_type
                 for user in users:
                     person = getattr(user, 'person', None)
                     if person:
@@ -61,9 +97,9 @@ def attribute_handler(sender, instance, created, **kwargs):
                             content_object=person)
 
                         # Value for option must set from their ForeignKey
-                        if instance.type == 'option':
+                        if instance.field_type == 'option':
                             pass
-                        elif instance.type == 'multi_option':
+                        elif instance.field_type == 'multi_option':
                             pass
                         else:
                             setattr(attr_obj, model_field, None)

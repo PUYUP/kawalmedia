@@ -19,6 +19,8 @@ AttributeOptionGroup = get_model('person', 'AttributeOptionGroup')
 Option = get_model('person', 'Option')
 Attribute = get_model('person', 'Attribute')
 AttributeValue = get_model('person', 'AttributeValue')
+Validation = get_model('person', 'Validation')
+ValidationValue = get_model('person', 'ValidationValue')
 
 
 """All inlines define start here"""
@@ -66,18 +68,20 @@ class UserAdmin(UserAdmin):
 
 class RoleAdmin(admin.ModelAdmin):
     model = Role
+    list_display = ('label', 'is_default', 'is_active',)
     prepopulated_fields = {"identifier": ("label", )}
 
 
 class AttributeAdmin(admin.ModelAdmin):
-    list_display = ('label', 'identifier', 'type',
-                    'get_roles', 'entity_type',)
+    model = Attribute
+    list_display = ('label', 'identifier', 'field_type',
+                    'get_roles', 'entity_type', 'required',)
     prepopulated_fields = {"identifier": ("label", )}
 
     def get_roles(self, obj):
         """ Print all roles """
         if hasattr(obj, 'roles'):
-            role_html = []
+            role_html = list()
             roles_obj = obj.roles.all()
             for role in roles_obj:
                 role_item = format_html('{} : {}', role.identifier, role.label)
@@ -88,7 +92,7 @@ class AttributeAdmin(admin.ModelAdmin):
 
     def entity_type(self, obj):
         if obj.content_type:
-            ent_html = []
+            ent_html = list()
             entities = obj.content_type.all()
             for ent in entities:
                 ent_item = format_html('{}', ent)
@@ -140,7 +144,6 @@ class AttributeOptionGroupAdmin(admin.ModelAdmin):
 class PersonAdmin(admin.ModelAdmin):
     model = Person
     list_display = ('user',)
-    # inlines = [AttributeInline]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         if db_field.name == 'person':
@@ -156,7 +159,7 @@ class PersonAdmin(admin.ModelAdmin):
     def get_roles(self, obj):
         """ Print all roles """
         if hasattr(obj, 'roles'):
-            role_html = []
+            role_html = list()
             roles_obj = obj.roles.all()
             for role in roles_obj:
                 role_item = format_html('{} : {}', role.identifier, role.label)
@@ -164,6 +167,73 @@ class PersonAdmin(admin.ModelAdmin):
             return role_html
         return None
     get_roles.short_description = _('Roles')
+
+
+# Validation entity here
+
+
+class ValidationAdmin(admin.ModelAdmin):
+    model = Validation
+    list_display = ('label', 'identifier', 'field_type',
+                    'get_roles', 'entity_type',)
+    prepopulated_fields = {"identifier": ("label", )}
+
+    def get_roles(self, obj):
+        """ Print all roles """
+        if hasattr(obj, 'roles'):
+            role_html = list()
+            roles_obj = obj.roles.all()
+            for role in roles_obj:
+                role_item = format_html('{} : {}', role.identifier, role.label)
+                role_html.append(role_item)
+            return role_html
+        return None
+    get_roles.short_description = _('Roles')
+
+    def entity_type(self, obj):
+        if obj.content_type:
+            ent_html = list()
+            entities = obj.content_type.all()
+            for ent in entities:
+                ent_item = format_html('{}', ent)
+                ent_html.append(ent_item)
+            return ent_html
+        else:
+            return None
+    entity_type.short_description = _("Entity type")
+
+
+class ValidationValueAdmin(admin.ModelAdmin):
+    model = ValidationValue
+    list_display = ('entity', 'validation', 'entity_type',
+                    'value', 'secure_code', 'verified', 'date_created',)
+    list_filter = ('validation', 'verified', 'date_created',)
+    search_fields = ('person__user__username',)
+
+    def entity_type(self, obj):
+        if obj.content_type:
+            return obj.content_type
+        else:
+            return None
+    entity_type.short_description = _("Entity type")
+
+    def entity(self, obj):
+        if obj.content_object:
+            return obj.content_object
+        else:
+            return None
+    entity.short_description = _("Entity object")
+
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        return qs.prefetch_related(
+            'validation', 'content_type') \
+            .select_related(
+                'validation', 'content_type')
+
+    def get_search_results(self, request, queryset, search_term):
+        queryset, use_distinct = super().get_search_results(request, queryset, search_term)
+        return queryset, use_distinct
 
 
 # Register your models here.
@@ -177,3 +247,7 @@ admin.site.register(Attribute, AttributeAdmin)
 admin.site.register(AttributeValue, AttributeValueAdmin)
 admin.site.register(AttributeOptionGroup, AttributeOptionGroupAdmin)
 admin.site.register(Option, OptionAdmin)
+
+# Validations
+admin.site.register(Validation, ValidationAdmin)
+admin.site.register(ValidationValue, ValidationValueAdmin)

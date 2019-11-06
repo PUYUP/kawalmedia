@@ -1,8 +1,14 @@
+import asyncio
+
 from django.dispatch import receiver
 from django.db.models import F
+from django.contrib.contenttypes.models import ContentType
 
 # PROJECT UTILS
 from utils.validators import get_model
+
+# NOTIFICATION UTILS
+from ..notice.utils.asyncreate import create_notification
 
 # LOCAL UTILS
 from .utils.constant import PUBLISHED
@@ -11,6 +17,9 @@ from .utils.attributes import (
     update_attribute_values)
 
 EntityLog = get_model('escort', 'EntityLog')
+Notification = get_model('notice', 'Notification')
+
+loop = asyncio.get_event_loop()
 
 
 # Create signals
@@ -31,7 +40,7 @@ def media_handler(sender, instance, created, **kwargs):
 
         # Update attributes
         data = request.data if hasattr(request, 'data') else None
-        keys, values = [], {}
+        keys, values = list(), dict()
 
         if data is not None:
             for key in data:
@@ -186,12 +195,23 @@ def comment_handler(sender, instance, created, **kwargs):
             parent.reply_count = F('reply_count') + 1
             parent.save()
 
+        # Create notification
+        loop.run_in_executor(None, create_notification, instance)
+
 
 def comment_delete_handler(sender, instance, **kwargs):
     """Signals for Comment Delete action"""
     protest = instance.protest
     media = getattr(protest, 'media', None)
     parent = getattr(instance, 'parent', None)
+
+    content_type = ContentType.objects.get_for_model(instance)
+    notification = Notification.objects.filter(
+        content_type=content_type.pk,
+        content_id=instance.pk)
+
+    if notification.exists():
+        notification.delete()
 
     # Re-sum comment count
     if protest.comment_count:

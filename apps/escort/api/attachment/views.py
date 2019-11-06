@@ -65,7 +65,7 @@ class AttachmentApiView(viewsets.ViewSet):
     # Return a response
     def get_response(self, serializer, serializer_parent=None, *args, **kwargs):
         """ Output to endpoint """
-        response = {}
+        response = dict()
         limit = kwargs.get('limit', None)
         entity_type = kwargs.get('entity_type', None)
 

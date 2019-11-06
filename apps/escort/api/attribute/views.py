@@ -1,26 +1,32 @@
 from uuid import UUID
+from itertools import chain
 
-from django.http import Http404
 from django.db.models import F, Q
 from django.db import transaction
 from django.utils.translation import ugettext_lazy as _
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.cache import never_cache
 from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import FieldError, ObjectDoesNotExist
 
 # THIRD PARTY
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.parsers import (
     FormParser, FileUploadParser, MultiPartParser)
-from rest_framework import status, viewsets
+from rest_framework import status as response_status, viewsets
 from rest_framework.exceptions import NotFound, NotAcceptable
 
 # SERIALIZERS
-from .serializers import AttributeSerializer
+from .serializers import (
+    AttributeSerializer, AttributeValueSerializer,
+    CreateAttributeValueSerializer)
 
 # PERMISSIONS
-from ..permissions import IsOwnerOrReject, IsCreatorOrReject
+from ..permissions import (
+    IsEntityOwnerOrReject, IsCreatorOrReject,
+    IsOwnerOrReject)
 
 # PROJECT UTILS
 from utils.validators import get_model
@@ -35,9 +41,10 @@ from ...models.models import __all__ as model_index
 
 Media = get_model('escort', 'Media')
 Attribute = get_model('escort', 'Attribute')
+AttributeValue = get_model('escort', 'AttributeValue')
 
 
-class OptionApiView(viewsets.ViewSet):
+class AttributeApiView(viewsets.ViewSet):
     """Get attribute options for medias
     Read only..."""
     lookup_field = 'uuid'
@@ -45,19 +52,32 @@ class OptionApiView(viewsets.ViewSet):
     parser_class = (FormParser, FileUploadParser, MultiPartParser,)
     permission_action = {
         # Disable update if not owner
-        'update': [IsOwnerOrReject],
-        'partial_update': [IsOwnerOrReject]
+        'update': [IsEntityOwnerOrReject],
+        'partial_update': [IsEntityOwnerOrReject],
+        'destroy': [IsEntityOwnerOrReject],
     }
+
+    def get_permissions(self):
+        """
+        Instantiates and returns
+        the list of permissions that this view requires.
+        """
+        try:
+            # return permission_classes depending on `action`
+            return [permission() for permission in self.permission_action
+                    [self.action]]
+        except KeyError:
+            # action is not set return default permission_classes
+            return [permission() for permission in self.permission_classes]
 
     def list(self, request, format=None):
         entity_object = None
-        response = {}
         context = {'request': self.request}
         identifiers = request.GET.get('identifiers', None)
         entity_uuid = request.GET.get('entity_uuid', None)
         entity_index = request.GET.get('entity_index', None)
 
-        if entity_index is None:
+        if not entity_index or not entity_uuid:
             raise NotFound()
 
         # Make sure entity_index as integer only
@@ -91,37 +111,43 @@ class OptionApiView(viewsets.ViewSet):
             identifiers = identifiers.split(',')
 
             # Get attribute by entity
-            if entity_uuid:
-                try:
-                    entity_uuid = UUID(entity_uuid)
-                    entity_object = entity_model.objects.get(uuid=entity_uuid)
-                except ValueError:
-                    raise NotFound()
-            else:
-                entity_uuid = None
+            try:
+                entity_uuid = UUID(entity_uuid)
+            except ValueError:
+                raise NotFound()
+
+            try:
+                entity_object = entity_model.objects.get(uuid=entity_uuid)
+            except ObjectDoesNotExist:
+                raise NotFound()
 
             # Call value each field
-            queryset = Attribute.objects \
-                .filter(
-                    Q(content_type=entity_type),
-                    Q(identifier__in=identifiers),
-                    Q(**{'attributevalue__%s__isnull' % model_name: False}),
-                    Q(**{'attributevalue__%s__uuid' % model_name: entity_uuid})) \
-                .prefetch_related('option_group') \
-                .select_related('option_group') \
-                .distinct()
+            try:
+                queryset = Attribute.objects \
+                    .prefetch_related('option_group', 'content_type') \
+                    .select_related('option_group') \
+                    .filter(
+                        Q(content_type=entity_type),
+                        Q(identifier__in=identifiers),
+                        Q(**{'attributevalue__%s__isnull' % model_name: False}),
+                        Q(**{'attributevalue__%s__uuid' % model_name: entity_uuid})) \
+                    .distinct()
+            except FieldError:
+                raise NotFound()
 
             if queryset.exists():
                 for qs in queryset:
                     identifiers.remove(qs.identifier)
 
-                annotate = {}
+                annotate = dict()
                 for q in queryset:
-                    field = 'value_' + q.type
-                    if q.type == 'multi_option':
+                    field = 'value_' + q.field_type
+
+                    if q.field_type == 'multi_option':
                         annotate[field] = F('attributevalue')
                     else:
                         annotate[field] = F('attributevalue__%s' % field)
+                    annotate['value_uuid'] = F('attributevalue__uuid')
 
                 # Call value each field
                 queryset = queryset.annotate(**annotate)
@@ -129,69 +155,35 @@ class OptionApiView(viewsets.ViewSet):
             # Here we get all attributes
             # But filter by empty attributevalue
             queryset_all = Attribute.objects \
+                .prefetch_related('option_group', 'content_type') \
+                .select_related('option_group') \
                 .filter(
                     content_type=entity_type,
                     identifier__in=identifiers) \
-                .prefetch_related('option_group') \
-                .select_related('option_group') \
                 .distinct()
 
             # Combine two or more queryset
-            queryset = queryset | queryset_all
+            queryset = list(chain(queryset, queryset_all))
 
             # JSON Api
             serializer = AttributeSerializer(
                 queryset, many=True, context=context)
 
-            # Models object value
-            # Only if Media
-            if model_name == 'media':
-                basics = [
-                    {
-                        'value': {
-                            'field': 'value_text',
-                            'object': entity_object.label if entity_object else None,
-                            'object_print': None,
-                            'required': True,
-                        },
-                        'type': 'text',
-                        'identifier': 'label',
-                        'label': _("Nama Media"),
-                        'option_group': None,
-                        'secured': False,
-                        'minlength': 3,
-                    },
-                    {
-                        'value': {
-                            'field': 'value_option',
-                            'object': entity_object.publication if entity_object else None,
-                            'object_print': None,
-                            'required': True,
-                        },
-                        'type': 'option',
-                        'identifier': 'publication',
-                        'label': _("Jenis Publikasi"),
-                        'option_group': None,
-                        'secured': False,
-                        'minlength': 3,
-                    },
-                ]
-                response['basics'] = basics
-
-            response['attributes'] = serializer.data
-            return Response(response, status=status.HTTP_200_OK)
+            return Response(serializer.data, status=response_status.HTTP_200_OK)
         raise NotFound()
 
     # Update object attributes
     @method_decorator(csrf_protect)
+    @method_decorator(never_cache)
     @transaction.atomic
     def update(self, request, uuid=None):
-        """ Update attribute values """
-        response = {}
-        action = request.data.get('action', None)
+        """Update attribute values
+        uuid used from entity object, not from attribute!
+        So we can update multiple fields"""
+        context = {'request': self.request}
         entity_index = request.data.get('entity_index', None)
 
-        if entity_index is None:
+        if entity_index is None or not uuid:
             raise NotFound()
 
         # Make sure entity_index as integer only
@@ -218,47 +210,114 @@ class OptionApiView(viewsets.ViewSet):
         else:
             raise NotFound()
 
-        model_name = entity_model._meta.model_name  # ex: media, comment
-
-        if not action:
-            raise NotAcceptable(detail=_("Data invalid."))
-
         # Udate attribute
-        if action == 'update_attribute':
-            if uuid:
-                try:
-                    uuid = UUID(uuid)
-                    entity_object = entity_model.objects.get(uuid=uuid)
-                except ValueError:
-                    raise NotFound()
+        try:
+            uuid = UUID(uuid)
+        except ValueError:
+            raise NotFound()
 
-            # Media object
-            if model_name == 'media':
-                # Only creator can edit attributes
-                if entity_object.creator != request.user.person:
-                    raise NotAcceptable
+        try:
+            entity_object = entity_model.objects.get(uuid=uuid)
+        except ObjectDoesNotExist:
+            raise NotFound()
 
-                if 'label' in request.data or 'publication' in request.data:
-                    if 'label' in request.data:
-                        label = request.data.pop('label')
-                        entity_object.label = label
+        # Append file
+        if request.FILES:
+            setattr(request.data, 'files', request.FILES)
 
-                    if 'publication' in request.data:
-                        publication = request.data.pop('publication')
-                        entity_object.publication = publication
-                    entity_object.save()
-            else:
+        # Update attribute
+        update_attribute_values(
+            entity_object, identifiers=None, values=request.data)
+
+        # Get last inserted value
+        attribute_value = AttributeValue.objects \
+            .filter(object_id=entity_object.pk, content_type=entity_type) \
+            .order_by('date_created') \
+            .last()
+
+        serializer = AttributeValueSerializer(
+            attribute_value, many=False, context=context)
+        return Response(serializer.data, status=response_status.HTTP_200_OK)
+
+    # Update object attributes
+    @method_decorator(csrf_protect)
+    @method_decorator(never_cache)
+    @transaction.atomic
+    def partial_update(self, request, uuid=None):
+        """
+        {
+            "entity_index": 0,
+            "entity_uuid": "331ac501-805b-4243-95ae-c7ce87d8ae64",
+            "value_uuid": "b6c537d0-2567-40a5-8a59-d8f4ee592f4a",
+            "value": "My value"
+        }
+
+        If action update "value_uuid" required
+        If action new, remove "value_uuid"
+        """
+        context = {'request': self.request}
+        value = request.data.get('value', None)
+        value_uuid = request.data.get('value_uuid', None)
+        entity_uuid = request.data.get('entity_uuid', None)
+
+        if not value:
+            raise NotFound()
+
+        try:
+            uuid = UUID(uuid)
+        except ValueError:
+            raise NotFound()
+
+        # Use for update onlye
+        if value_uuid:
+            try:
+                value_uuid = UUID(value_uuid)
+            except ValueError:
                 raise NotFound()
 
-            # Append file
-            if request.FILES:
-                setattr(request.data, 'files', request.FILES)
+        try:
+            entity_uuid = UUID(entity_uuid)
+        except ValueError:
+            raise NotFound()
 
-            # Update attribute
-            update_attribute_values(
-                entity_object, identifiers=None, values=request.data)
-            response['uuid'] = uuid
-        return Response(response, status=status.HTTP_200_OK)
+        # Updata action
+        try:
+            queryset = AttributeValue.objects.get(
+                uuid=value_uuid,
+                attribute__uuid=uuid)
+
+            serializer = AttributeValueSerializer(
+                instance=queryset,
+                data=request.data,
+                context=context,
+                partial=True)
+        except ObjectDoesNotExist:
+            queryset = None
+
+        # Create new
+        if not queryset:
+            request.data.update({'attribute_uuid': uuid})
+            serializer = CreateAttributeValueSerializer(
+                data=request.data, context=context)
+
+        if serializer.is_valid(raise_exception=True):
+            serializer.save()
+            return Response(serializer.data, status=response_status.HTTP_200_OK)
+        return Response(serializer.errors, status=response_status.HTTP_400_BAD_REQUEST)
+
+    # Delete...
+    @method_decorator(csrf_protect)
+    @method_decorator(never_cache)
+    @transaction.atomic
+    def destroy(self, request, uuid=None):
+        """uuid used uuid from attribute value"""
+        queryset = AttributeValue.objects.filter(uuid=uuid)
+        if queryset.exists():
+            queryset.delete()
+
+        return Response(
+            {'detail': _("Berhasil dihapus.")},
+            status=response_status.HTTP_204_NO_CONTENT)
 
 
 class ConstantApiView(viewsets.ViewSet):
@@ -270,7 +329,7 @@ class ConstantApiView(viewsets.ViewSet):
         context = {'request': self.request}
         params = request.query_params
         constant = params.get('constant', None)
-        response = []
+        response = list()
 
         if not constant:
             raise NotFound()
@@ -283,4 +342,4 @@ class ConstantApiView(viewsets.ViewSet):
                         'label': str(val[1])
                     })
 
-        return Response(response, status=status.HTTP_200_OK)
+        return Response(response, status=response_status.HTTP_200_OK)

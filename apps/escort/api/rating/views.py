@@ -61,7 +61,7 @@ class RatingApiView(viewsets.ViewSet):
     # Return a response
     def get_response(self, serializer, serializer_parent=None, *args, **kwargs):
         """ Output to endpoint """
-        response = {}
+        response = dict()
         response['count'] = PAGINATOR.page.paginator.count
         response['navigate'] = {
             'previous': PAGINATOR.get_previous_link(),
