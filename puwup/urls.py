@@ -22,7 +22,7 @@ from api import routers
 from web import urls
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('kmsecurein/', admin.site.urls),
     path('api/', include(routers)),
     path('', include(urls)),
 ]

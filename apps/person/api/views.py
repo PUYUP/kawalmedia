@@ -80,6 +80,7 @@ class TokenObtainPairSerializerExtend(TokenObtainPairSerializer):
         return data
 
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class TokenObtainPairViewExtend(TokenObtainPairView):
     serializer_class = TokenObtainPairSerializerExtend
 
@@ -110,6 +111,7 @@ class TokenObtainPairViewExtend(TokenObtainPairView):
         return Response(serializer.validated_data, status=status.HTTP_200_OK)
 
 
+@method_decorator(ensure_csrf_cookie, name='dispatch')
 class SecureActionApiView(viewsets.ViewSet):
     permission_classes = (AllowAny,)
 

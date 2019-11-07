@@ -1,0 +1,9 @@
+*.pyc
+*~
+__pycache__
+.DS_Store
+.vscode
+*/__pycache__
+TASK
+TEMUAN
+app.yaml

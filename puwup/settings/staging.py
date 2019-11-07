@@ -27,8 +27,23 @@ MIDDLEWARE = MIDDLEWARE + PROJECT_MIDDLEWARE
 # Django Cors Header
 # ------------------------------------------------------------------------------
 # https://pypi.org/project/django-cors-headers/
-CORS_ORIGIN_ALLOW_ALL = True
+CORS_ORIGIN_ALLOW_ALL = False
 CORS_ALLOW_CREDENTIALS = True
+CORS_ORIGIN_WHITELIST = [
+    'http://localhost:4200',
+    'http://localhost:8100',
+    'https://puyup-app.firebaseapp.com',
+    'https://kawalmedia.com',
+    'http://portofolio.puyup.com',
+]
+
+CSRF_TRUSTED_ORIGINS = [
+    'localhost:4200',
+    'localhost:8100',
+    'puyup-app.firebaseapp.com',
+    'kawalmedia.com',
+    'portofolio.puyup.com',
+]
 
 
 # AUTHENTICATION
@@ -69,15 +84,6 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=365),
 }
-
-
-# Static files (CSS, JavaScript, Images)
-# ------------------------------------------------------------------------------
-# https://docs.djangoproject.com/en/2.2/howto/static-files/
-STATIC_URL = '/static/'
-STATICFILES_DIRS = (
-    os.path.join(PROJECT_PATH, 'static'),
-)
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(PROJECT_PATH, 'media')
